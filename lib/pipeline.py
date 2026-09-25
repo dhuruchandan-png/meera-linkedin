@@ -183,6 +183,9 @@ DRAFT_SCHEMA = {
 
 
 def _angle_block(angle):
+    if angle and angle.get("keep"):
+        return ("CURRENT ANGLE: keep any source the previous version already cites, exactly as cited. Do not add "
+                "new news, studies or data points.")
     if angle and angle.get("found"):
         return (
             "CURRENT ANGLE (verified by search; cite it in the body the way she cites studies, naming the source "
@@ -200,7 +203,7 @@ def _angle_block(angle):
 def draft(note, scr, angle, feedback=None, previous=None):
     prompt = (
         f"Today is {today()}.\n\n"
-        f"RAW NOTE (note #{note['id']}, captured via Telegram). If it contains phrases in her own voice that fit, "
+        f"RAW NOTE (captured via {note.get('source', 'Telegram')}). If it contains phrases in her own voice that fit, "
         "keep them verbatim; do not polish them:\n"
         f'"""\n{note["text"]}\n"""\n\n'
         f"SCREEN: category = {scr.get('category')}; core claim = {scr.get('core_claim')}; "
@@ -322,23 +325,45 @@ def _dedupe(items):
     return out
 
 
-def render(note, result, draft_id=None):
-    """Section 12 structure, split into three Telegram messages so the post itself is copy-ready."""
-    created = datetime.datetime.utcfromtimestamp(note["created"] + 19800).strftime("%d %b %Y")
-    head = (
-        f"SOURCE NOTE: note #{note['id']} ({note.get('source', 'telegram')}, {created})\n"
+NOTE_MARK = "NOTE ("
+
+
+def note_block(note):
+    """The note's text as carried inside bot messages (buttons read it back from here)."""
+    text = note["text"]
+    if len(text) > 2500:
+        text = text[:2500] + " [...]"
+    return f"{NOTE_MARK}{note.get('source', 'telegram')}, {note.get('date', today())}):\n{text}"
+
+
+def parse_note(message_text):
+    """Inverse of note_block. Returns {text, source, date} or None."""
+    i = (message_text or "").rfind("\n" + NOTE_MARK)
+    if i == -1:
+        if not (message_text or "").startswith(NOTE_MARK):
+            return None
+        i = -1
+    m = re.match(r"NOTE \(([^,\n]*), ([^)\n]*)\):\n(.*)\Z", message_text[i + 1:], re.S)
+    if not m or not m.group(3).strip():
+        return None
+    return {"source": m.group(1), "date": m.group(2), "text": m.group(3).strip()}
+
+
+def render(note, result):
+    """Section 12 structure as two Telegram messages: (meta with buttons, copy-ready post)."""
+    angle = result["angle"] or {}
+    meta = (
+        f"SOURCE NOTE: {note.get('source', 'telegram')}, {note.get('date', today())} (quoted at the bottom)\n"
         f"CATEGORY: {result['category']}\n"
         "FORMAT: LinkedIn\n"
-        f"WHY THIS NOTE: {result['why']}\n\n"
-        f"--- DRAFT{' #' + str(draft_id) if draft_id else ''} (next message) ---"
+        f"WHY THIS NOTE: {result['why']}\n"
+        "--- DRAFT: next message ---\n"
     )
-    body = result["post"]
-    angle = result["angle"] or {}
-    tail = "--- END DRAFT ---\n\n"
-    tail += f"CURRENT ANGLE: {angle_line(angle)}\n"
+    meta += f"CURRENT ANGLE: {angle_line(angle)}\n"
     if angle.get("found") and angle.get("finding"):
-        tail += f"Sources: {angle.get('finding')} ({angle.get('url')})\n"
-    tail += "FLAGS: " + ("\n- " + "\n- ".join(result["flags"]) if result["flags"] else "none") + "\n"
-    tail += "SELF-CHECK: " + ("\n- " + "\n- ".join(result["self_check"]) if result["self_check"] else "all pass")
-    tail += "\n\nNothing has been posted. Copy it into LinkedIn yourself when it is right. Reply to the draft with notes to get a revision."
-    return head, body, tail
+        meta += f"Sources: {angle.get('finding')} ({angle.get('url')})\n"
+    meta += "FLAGS: " + ("\n- " + "\n- ".join(result["flags"]) if result["flags"] else "none") + "\n"
+    meta += "SELF-CHECK: " + ("\n- " + "\n- ".join(result["self_check"]) if result["self_check"] else "all pass")
+    meta += ("\n\nNothing has been posted. Reply to the draft with comments to get a revision.\n\n"
+             + note_block(note))
+    return meta, result["post"]

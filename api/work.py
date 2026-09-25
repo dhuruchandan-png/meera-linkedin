@@ -1,4 +1,5 @@
-"""Scheduled draft (Mon/Wed/Fri, see vercel.json): GET /api/cron"""
+"""Background worker: POST /api/work (called by the webhook for drafting, which takes 1-3 minutes)."""
+import json
 import os
 import sys
 import traceback
@@ -10,19 +11,18 @@ from lib import bot, config  # noqa: E402
 
 
 class handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        secret = config.get("CRON_SECRET")
-        if not secret or self.headers.get("Authorization") != f"Bearer {secret}":
+    def do_POST(self):
+        if self.headers.get("X-Worker-Secret") != config.worker_secret():
             return self._reply(401, "unauthorised")
         try:
-            result = bot.scheduled()
-        except Exception as e:
+            n = int(self.headers.get("Content-Length") or 0)
+            bot.run_job(json.loads(self.rfile.read(n) or b"{}"))
+        except Exception:
             traceback.print_exc()
-            result = f"error: {e}"
-        self._reply(200, result)
+        self._reply(200, "done")
 
     def _reply(self, code, text):
         self.send_response(code)
         self.send_header("Content-Type", "text/plain")
         self.end_headers()
-        self.wfile.write(str(text).encode())
+        self.wfile.write(text.encode())

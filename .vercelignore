@@ -1,0 +1,4 @@
+.env.local
+scripts/
+tests/
+__pycache__/
