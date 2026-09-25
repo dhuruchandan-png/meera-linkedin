@@ -16,9 +16,43 @@ from lib import config  # noqa: E402
 from lib import telegram as tg  # noqa: E402
 
 
+def diagnose():
+    """?diag=1: why aren't notes getting answers? Never registers anything."""
+    import time
+    import traceback
+    out = {}
+    try:
+        info = tg.call("getWebhookInfo")
+        out["webhook"] = {k: info.get(k) for k in ("url", "pending_update_count", "last_error_message",
+                                                   "last_error_date", "allowed_updates")}
+        if info.get("last_error_date"):
+            out["webhook"]["last_error_seconds_ago"] = int(time.time() - info["last_error_date"])
+    except Exception as e:
+        out["webhook"] = f"error: {e}"
+    try:
+        from lib import bot, gemini, pipeline  # noqa: F401
+        out["code_imports"] = "ok"
+    except Exception:
+        out["code_imports"] = traceback.format_exc()[-800:]
+        return out
+    for label, model in (("screen_model", config.screen_model()), ("draft_model", config.draft_model())):
+        t0 = time.time()
+        try:
+            text, _ = gemini.generate(model, "Reply with the single word OK.", temperature=0)
+            out[label] = f"{model}: ok ({time.time() - t0:.1f}s) -> {text.strip()[:20]}"
+        except Exception as e:
+            out[label] = f"{model}: FAILED - {str(e)[:400]}"
+    ids = {"TELEGRAM_USER_ID": config.owner_id(), "CHAT_ID": config.chat_id()}
+    out["ids"] = {k: ("set, " + ("negative (channel/group)" if v < 0 else "positive (user)")) if v else "missing"
+                  for k, v in ids.items()}
+    return out
+
+
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         query = parse_qs(urlparse(self.path).query)
+        if query.get("diag"):
+            return self._json(200, diagnose())
         required = {
             "TELEGRAM_BOT_TOKEN": config.telegram_token(),
             "GEMINI_API_KEY": config.gemini_key(),
