@@ -13,8 +13,11 @@ import hashlib
 import os
 import re
 
-DEFAULT_SCREEN_MODEL = "gemini-2.5-flash"
-DEFAULT_DRAFT_MODEL = "gemini-2.5-pro"
+# "auto" = ask the API which models this key can use and pick the newest stable
+# flash (screening, search, transcription) and pro (drafting). Set
+# GEMINI_SCREEN_MODEL / GEMINI_DRAFT_MODEL to pin a specific model instead.
+DEFAULT_SCREEN_MODEL = "auto-flash"
+DEFAULT_DRAFT_MODEL = "auto-pro"
 
 
 def get(*keys, default=None):

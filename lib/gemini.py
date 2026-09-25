@@ -14,9 +14,52 @@ class GeminiError(Exception):
     pass
 
 
-def _models(primary):
-    fb = config.fallback_model()
-    return [primary] if fb == primary else [primary, fb]
+_available = {}
+
+
+def available_models(key):
+    """Model ids this key can call with generateContent (cached per instance)."""
+    if key not in _available:
+        names = []
+        try:
+            r = net.request("GET", f"{BASE}/models?pageSize=1000", headers={"x-goog-api-key": key}, timeout=20)
+            for m in r.get("models", []):
+                if "generateContent" in m.get("supportedGenerationMethods", []):
+                    names.append(m["name"].split("/", 1)[-1])
+        except net.HTTPError:
+            pass
+        _available[key] = names
+    return _available[key]
+
+
+def _version(name, family):
+    m = re.fullmatch(rf"gemini-(\d+(?:\.\d+)?)-{family}(-latest)?", name)
+    return float(m.group(1)) if m else None
+
+
+def pick(family, key):
+    """Newest stable gemini-X.Y-<family> (no preview/lite/exp builds)."""
+    ranked = sorted(((v, n) for n in available_models(key) if (v := _version(n, family)) is not None), reverse=True)
+    return ranked[0][1] if ranked else None
+
+
+def resolve(name, key):
+    if name == "auto-pro":
+        return pick("pro", key) or pick("flash", key) or name
+    if name == "auto-flash":
+        return pick("flash", key) or name
+    return name
+
+
+def _models(primary, key):
+    first = resolve(primary, key)
+    fb = resolve(config.fallback_model(), key)
+    out = [first] if fb == first else [first, fb]
+    # If a pinned model gets retired (404), fall back to whatever flash is current.
+    auto = pick("flash", key)
+    if auto and auto not in out:
+        out.append(auto)
+    return out
 
 
 def generate(model, parts, system=None, schema=None, search=False, temperature=0.7, timeout=170):
@@ -51,7 +94,7 @@ def generate(model, parts, system=None, schema=None, search=False, temperature=0
 
 def _generate_with_key(key, model, body, timeout):
     last_err = None
-    models = _models(model)
+    models = _models(model, key)
     for mi, m in enumerate(models):
         has_fallback = mi < len(models) - 1
         for attempt in range(2):
@@ -63,7 +106,7 @@ def _generate_with_key(key, model, body, timeout):
                 return _parse(r)
             except net.HTTPError as e:
                 last_err = e
-                if e.status == 404 or (e.status == 429 and has_fallback):
+                if (e.status == 404 or e.status == 429) and has_fallback:
                     break  # model missing or rate-limited: move to the fallback
                 if e.status in RETRYABLE and attempt == 0:
                     time.sleep(4)

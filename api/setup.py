@@ -35,13 +35,16 @@ def diagnose():
     except Exception:
         out["code_imports"] = traceback.format_exc()[-800:]
         return out
+    keys = config.gemini_keys()
+    out["gemini_keys"] = len(keys)
     for label, model in (("screen_model", config.screen_model()), ("draft_model", config.draft_model())):
         t0 = time.time()
+        resolved = gemini.resolve(model, keys[0]) if keys else model
         try:
             text, _ = gemini.generate(model, "Reply with the single word OK.", temperature=0)
-            out[label] = f"{model}: ok ({time.time() - t0:.1f}s) -> {text.strip()[:20]}"
+            out[label] = f"{resolved}: ok ({time.time() - t0:.1f}s) -> {text.strip()[:20]}"
         except Exception as e:
-            out[label] = f"{model}: FAILED - {str(e)[:400]}"
+            out[label] = f"{resolved}: FAILED - {str(e)[:400]}"
     ids = {"TELEGRAM_USER_ID": config.owner_id(), "CHAT_ID": config.chat_id()}
     out["ids"] = {k: ("set, " + ("negative (channel/group)" if v < 0 else "positive (user)")) if v else "missing"
                   for k, v in ids.items()}
