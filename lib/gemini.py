@@ -37,15 +37,24 @@ def _version(name, family):
     return float(m.group(1)) if m else None
 
 
+def _newest(family, key):
+    ranked = sorted(((v, n) for n in available_models(key) if (v := _version(n, family)) is not None), reverse=True)
+    return ranked[0] if ranked else (None, None)
+
+
 def pick(family, key):
     """Newest stable gemini-X.Y-<family> (no preview/lite/exp builds)."""
-    ranked = sorted(((v, n) for n in available_models(key) if (v := _version(n, family)) is not None), reverse=True)
-    return ranked[0][1] if ranked else None
+    return _newest(family, key)[1]
 
 
 def resolve(name, key):
     if name == "auto-pro":
-        return pick("pro", key) or pick("flash", key) or name
+        pv, pro = _newest("pro", key)
+        fv, flash = _newest("flash", key)
+        # An older-generation pro is retired or weaker than a current flash.
+        if pro and (fv is None or pv >= fv):
+            return pro
+        return flash or name
     if name == "auto-flash":
         return pick("flash", key) or name
     return name
