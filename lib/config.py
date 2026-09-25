@@ -36,7 +36,31 @@ def _int(*keys):
 
 
 def telegram_token():
-    return get("TELEGRAM_BOT_TOKEN")
+    t = get("TELEGRAM_BOT_TOKEN", "BOT_TOKEN")
+    if not t:
+        return None
+    t = t.strip().strip('"').strip("'").strip()
+    if t.lower().startswith("bot") and ":" in t:
+        t = t[3:]  # "bot123:ABC" -> "123:ABC"
+    return t
+
+
+def token_shape():
+    """Describe the token's format without revealing it (for the setup page)."""
+    t = telegram_token()
+    if not t:
+        return "missing"
+    import re
+    if re.fullmatch(r"\d{6,}:[A-Za-z0-9_-]{30,}", t):
+        return f"looks valid ({len(t)} characters)"
+    hints = []
+    if ":" not in t:
+        hints.append("has no ':' - a BotFather token looks like 1234567890:AAH...")
+    if " " in t:
+        hints.append("contains spaces")
+    if t.startswith("@") or t.lower().endswith("bot"):
+        hints.append("looks like a bot username, not a token")
+    return f"does not look like a bot token ({len(t)} characters): " + ("; ".join(hints) or "unexpected format")
 
 
 def gemini_key():

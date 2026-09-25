@@ -62,6 +62,10 @@ class handler(BaseHTTPRequestHandler):
                                         "(bots can't message someone first). Then open this page with ?test=1.")
         except tg.TelegramError as e:
             out.update(ok=False, error=str(e)[:300])
+            if "getMe" in str(e):
+                out["token_check"] = config.token_shape()
+                out["fix"] = ("Telegram rejected the bot token. In Telegram open @BotFather > /mybots > your bot > "
+                              "API Token, copy it, paste it as the value of Telegram_Bot_Token in Vercel, then Redeploy.")
         if missing:
             out.update(ok=False, fix=f"Add {', '.join(missing)} in Vercel > Settings > Environment Variables, then Redeploy.")
         self._json(200 if out["ok"] else 500, out)
