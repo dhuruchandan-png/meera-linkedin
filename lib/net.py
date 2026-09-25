@@ -24,6 +24,9 @@ def request(method, url, data=None, headers=None, timeout=60, raw=False):
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             payload = r.read()
+    except ValueError as e:
+        # e.g. "Invalid header value b'<secret>'" - never pass the value on
+        raise HTTPError(0, f"invalid request ({type(e).__name__}); check the API key setting") from None
     except urllib.error.HTTPError as e:
         raise HTTPError(e.code, e.read().decode("utf-8", "replace")) from None
     if raw:

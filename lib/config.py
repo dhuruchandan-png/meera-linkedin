@@ -11,6 +11,7 @@ Optional: GEMINI_SCREEN_MODEL, GEMINI_DRAFT_MODEL.
 """
 import hashlib
 import os
+import re
 
 DEFAULT_SCREEN_MODEL = "gemini-2.5-flash"
 DEFAULT_DRAFT_MODEL = "gemini-2.5-pro"
@@ -63,8 +64,30 @@ def token_shape():
     return f"does not look like a bot token ({len(t)} characters): " + ("; ".join(hints) or "unexpected format")
 
 
+def gemini_keys():
+    """One or more keys (separated by newlines, spaces or commas); tried in order."""
+    raw = get("GEMINI_API_KEY", "GEMINI_API") or ""
+    return [k.strip().strip('"').strip("'") for k in re.split(r"[\s,;]+", raw) if k.strip().strip('"').strip("'")]
+
+
 def gemini_key():
-    return get("GEMINI_API_KEY", "GEMINI_API")
+    keys = gemini_keys()
+    return keys[0] if keys else None
+
+
+def redact(text):
+    """Remove every secret value from text before it is shown anywhere."""
+    text = str(text)
+    secrets = list(gemini_keys())
+    if telegram_token():
+        secrets.append(telegram_token())
+    raw = get("GEMINI_API_KEY", "GEMINI_API")
+    if raw:
+        secrets.append(raw)
+    for sec in sorted(set(secrets), key=len, reverse=True):
+        if len(sec) >= 8:
+            text = text.replace(sec, "[redacted]")
+    return re.sub(r"(AIza|AQ\.)[A-Za-z0-9_.\-]{16,}", "[redacted]", text)
 
 
 def owner_id():

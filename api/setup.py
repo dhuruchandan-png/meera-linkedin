@@ -105,7 +105,7 @@ class handler(BaseHTTPRequestHandler):
         self._json(200 if out["ok"] else 500, out)
 
     def _json(self, code, body):
-        data = json.dumps(body, indent=2).encode()
+        data = config.redact(json.dumps(body, indent=2)).encode()
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.end_headers()

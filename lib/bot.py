@@ -89,7 +89,7 @@ def _extract_note(msg):
         try:
             text = transcribe(media)
         except Exception as e:
-            tg.send(out_chat(), f"I couldn't transcribe a voice note ({e}). Could you send it as text?")
+            tg.send(out_chat(), f"I couldn't transcribe a voice note ({config.redact(e)}). Could you send it as text?")
             return None
         return {"text": text, "source": f"{source} voice note", "date": pipeline.today()}
     text = (msg.get("text") or msg.get("caption") or "").strip()
@@ -119,7 +119,7 @@ def capture(note):
     try:
         res = pipeline.screen([{"id": 1, "text": note["text"]}]).get(1)
     except gemini.GeminiError as e:
-        return tg.send(out_chat(), f"I couldn't screen this note yet ({e}).\n\n" + pipeline.note_block(note),
+        return tg.send(out_chat(), f"I couldn't screen this note yet ({config.redact(e)}).\n\n" + pipeline.note_block(note),
                        buttons=[[("Try again", "draft")]])
     if not res:
         return tg.send(out_chat(), "I couldn't screen this note.\n\n" + pipeline.note_block(note),
@@ -173,7 +173,7 @@ def draft_note(note, scr=None, feedback=None):
         send_draft(note, result)
     except Exception as e:
         traceback.print_exc()
-        tg.send(out_chat(), f"Drafting failed: {e}\n\n" + pipeline.note_block(note), buttons=[[("Try again", "draft")]])
+        tg.send(out_chat(), f"Drafting failed: {config.redact(e)}\n\n" + pipeline.note_block(note), buttons=[[("Try again", "draft")]])
 
 
 def revise_draft(previous, comments):
@@ -194,7 +194,7 @@ def revise_draft(previous, comments):
         tg.send(out_chat(), post, reply_to=m["message_id"] if m else None)
     except Exception as e:
         traceback.print_exc()
-        tg.send(out_chat(), f"Revising failed: {e}. Reply to the draft again to retry.")
+        tg.send(out_chat(), f"Revising failed: {config.redact(e)}. Reply to the draft again to retry.")
 
 
 def send_draft(note, result):
@@ -270,7 +270,7 @@ def run_import(texts):
         try:
             results.update(pipeline.screen(batch))
         except gemini.GeminiError as e:
-            tg.send(out_chat(), f"Screening stopped at note {i + 1} ({e}). Send the rest with /import again.")
+            tg.send(out_chat(), f"Screening stopped at note {i + 1} ({config.redact(e)}). Send the rest with /import again.")
             break
     keep = sorted(((r.get("strength", 0), nid) for nid, r in results.items() if r.get("develop")), reverse=True)
     rejected = [(nid, r) for nid, r in results.items() if not r.get("develop")]

@@ -34,6 +34,22 @@ def generate(model, parts, system=None, schema=None, search=False, temperature=0
         body["tools"] = [{"google_search": {}}]
 
     # Try the requested model (one retry on transient errors), then the fallback model.
+    keys = config.gemini_keys()
+    if not keys:
+        raise GeminiError("GEMINI_API_KEY is not set")
+    last_err = None
+    for ki, key in enumerate(keys):
+        try:
+            return _generate_with_key(key, model, body, timeout)
+        except GeminiError as e:
+            last_err = e
+            if ki < len(keys) - 1 and getattr(e, "retry_next_key", False):
+                continue
+            raise
+    raise last_err
+
+
+def _generate_with_key(key, model, body, timeout):
     last_err = None
     models = _models(model)
     for mi, m in enumerate(models):
@@ -42,7 +58,7 @@ def generate(model, parts, system=None, schema=None, search=False, temperature=0
             try:
                 r = net.request(
                     "POST", f"{BASE}/models/{m}:generateContent", body,
-                    headers={"x-goog-api-key": config.gemini_key()}, timeout=timeout,
+                    headers={"x-goog-api-key": key}, timeout=timeout,
                 )
                 return _parse(r)
             except net.HTTPError as e:
@@ -52,11 +68,15 @@ def generate(model, parts, system=None, schema=None, search=False, temperature=0
                 if e.status in RETRYABLE and attempt == 0:
                     time.sleep(4)
                     continue
-                raise GeminiError(str(e)) from None
+                err = GeminiError(config.redact(e))
+                err.retry_next_key = e.status in (0, 400, 401, 403, 429)
+                raise err from None
             except (TimeoutError, OSError) as e:
                 last_err = e
                 break
-    raise GeminiError(str(last_err))
+    err = GeminiError(config.redact(last_err))
+    err.retry_next_key = isinstance(last_err, net.HTTPError) and last_err.status == 429
+    raise err
 
 
 def _parse(r):
